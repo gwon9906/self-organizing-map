@@ -40,17 +40,25 @@ LoRa(Chirp Spread Spectrum) 심볼을 **SOM(Self-Organizing Map)** 으로 시각
 
 노트북: [lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb)
 
-## 실행 방법
 
-1) Python/Conda 환경 준비(예시)
-- `conda create -n ai python=3.11 -y`
-- `conda activate ai`
-- `pip install numpy matplotlib scipy`
-
-2) 노트북 실행
-- `jupyter lab` 또는 VS Code Notebook 실행
 
 ## 실험 결과 요약 (현재 노트북 출력 기준)
+
+## 결과 이미지
+
+### Real+Imag vs FFT magnitude (비교)
+
+![Comparison: Real+Imag vs FFT](docs/assets/comparison_realimag_vs_fft.png)
+
+### Circular embedding
+
+![LoRa Symbols in Circular Space](docs/assets/circular_space.png)
+
+![U-Matrix (Circular Coordinates)](docs/assets/circular_u_matrix.png)
+
+![Circular SOM - Symbol Distribution](docs/assets/circular_symbol_distribution.png)
+
+![Complete Symbol Path on SOM](docs/assets/circular_symbol_path.png)
 
 ### 비교: Real+Imag vs FFT magnitude
 노트북: [lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb)
