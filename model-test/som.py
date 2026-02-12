@@ -4,12 +4,22 @@ Kohonen의 Self-Organizing Map 알고리즘 구현
 - 커스텀 거리 함수 지원 추가
 """
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.collections import PatchCollection
-from matplotlib.patches import RegularPolygon
-from matplotlib.colors import Normalize
-from typing import Tuple, Optional, List, Callable
+
+# matplotlib은 시각화에만 필요합니다.
+# 학습/추론만 사용할 때는 없어도 동작하도록 지연(import) 처리합니다.
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    from matplotlib.collections import PatchCollection
+    from matplotlib.patches import RegularPolygon
+    from matplotlib.colors import Normalize
+except ModuleNotFoundError:  # pragma: no cover
+    plt = None  # type: ignore
+    cm = None  # type: ignore
+    PatchCollection = None  # type: ignore
+    RegularPolygon = None  # type: ignore
+    Normalize = None  # type: ignore
+from typing import Tuple, Optional, List, Callable, Any
 
 
 class SelfOrganizingMap:
@@ -57,22 +67,34 @@ class SelfOrganizingMap:
         self.hex_radius = float(hex_radius)
         
         # 거리 함수 설정
+        self._distance_kind = 'custom'
         if callable(distance_fn):
             self._distance_fn = distance_fn
-        elif distance_fn == 'euclidean':
-            self._distance_fn = self._euclidean_distance
-        elif distance_fn == 'cosine':
-            self._distance_fn = self._cosine_distance
-        elif distance_fn == 'manhattan':
-            self._distance_fn = self._manhattan_distance
         else:
-            self._distance_fn = self._euclidean_distance
+            distance_fn = str(distance_fn).lower().strip()
+            if distance_fn == 'euclidean':
+                self._distance_fn = self._euclidean_distance
+                self._distance_kind = 'euclidean'
+            elif distance_fn == 'cosine':
+                self._distance_fn = self._cosine_distance
+                self._distance_kind = 'cosine'
+            elif distance_fn == 'manhattan':
+                self._distance_fn = self._manhattan_distance
+                self._distance_kind = 'manhattan'
+            else:
+                self._distance_fn = self._euclidean_distance
+                self._distance_kind = 'euclidean'
         
         if random_seed is not None:
             np.random.seed(random_seed)
         
         # 가중치 초기화 (map_size[0] x map_size[1] x input_dim)
         self.weights = np.random.randn(map_size[0], map_size[1], input_dim) * 0.1
+
+        # cosine 거리에서는 가중치/입력의 방향이 중요하므로 가중치를 단위벡터로 맞추는 편이 안정적입니다.
+        if self._distance_kind == 'cosine':
+            wn = np.linalg.norm(self.weights, axis=2, keepdims=True) + 1e-8
+            self.weights = self.weights / wn
         
         # 뉴런 좌표 미리 계산
         self._neuron_positions = self._create_neuron_positions()
@@ -190,6 +212,8 @@ class SelfOrganizingMap:
         vmax: Optional[float] = None,
     ):
         """Hex 타일로 2D 맵을 시각화"""
+        if plt is None or PatchCollection is None or RegularPolygon is None or Normalize is None:
+            raise ModuleNotFoundError("matplotlib is required for plotting. Install it (e.g., pip/conda install matplotlib) to use plot_* methods.")
         if self.topology != 'hex':
             raise RuntimeError("Hex plotting requested but topology is not 'hex'")
 
@@ -197,7 +221,7 @@ class SelfOrganizingMap:
         centers = self.get_neuron_centers()
         radius = self.hex_radius
 
-        patches: List[RegularPolygon] = []
+        patches: List[Any] = []
         color_values: List[float] = []
 
         for r in range(rows):
@@ -261,23 +285,60 @@ class SelfOrganizingMap:
         sampled = sampled + noise
         
         self.weights = sampled.reshape(self.map_size[0], self.map_size[1], -1)
-    
-    def _find_bmu(self, x: np.ndarray) -> Tuple[int, int]:
+
+        if self._distance_kind == 'cosine':
+            wn = np.linalg.norm(self.weights, axis=2, keepdims=True) + 1e-8
+            self.weights = self.weights / wn
+
+    def _distances_to_all_neurons(self, x: np.ndarray) -> Optional[np.ndarray]:
+        """입력 x에 대해 모든 뉴런까지의 거리 맵(shape: map_size)을 계산.
+
+        커스텀 거리 함수는 벡터화가 보장되지 않아 None을 반환합니다.
         """
-        Best Matching Unit (BMU) 찾기
-        입력 벡터 x와 가장 유사한 뉴런의 위치 반환
-        """
+        if self._distance_kind == 'custom':
+            return None
+
+        x_vec = x.reshape(-1)
+        w = self.weights.reshape(-1, self.input_dim)
+
+        if self._distance_kind == 'euclidean':
+            diff = w - x_vec
+            d = np.einsum('ij,ij->i', diff, diff)  # squared L2
+        elif self._distance_kind == 'manhattan':
+            d = np.sum(np.abs(w - x_vec), axis=1)
+        else:  # cosine
+            # cosine distance = 1 - (w·x)/(||w|| ||x||)
+            dot = w @ x_vec
+            w_norm = np.linalg.norm(w, axis=1)
+            x_norm = float(np.linalg.norm(x_vec))
+            denom = (w_norm * x_norm) + 1e-10
+            d = 1.0 - (dot / denom)
+
+        return d.reshape(self.map_size)
+
+    def _find_bmu_slow(self, x: np.ndarray) -> Tuple[int, int]:
+        """BMU 찾기 (범용/느린 버전: 커스텀 거리 함수 대응)"""
         min_dist = float('inf')
         bmu_idx = (0, 0)
-        
+
         for i in range(self.map_size[0]):
             for j in range(self.map_size[1]):
                 dist = self._distance_fn(x, self.weights[i, j])
                 if dist < min_dist:
                     min_dist = dist
                     bmu_idx = (i, j)
-        
+
         return bmu_idx
+    
+    def _find_bmu(self, x: np.ndarray) -> Tuple[int, int]:
+        """
+        Best Matching Unit (BMU) 찾기
+        입력 벡터 x와 가장 유사한 뉴런의 위치 반환
+        """
+        dists = self._distances_to_all_neurons(x)
+        if dists is None:
+            return self._find_bmu_slow(x)
+        return np.unravel_index(int(np.argmin(dists)), dists.shape)
     
     def _find_bmu_fast(self, x: np.ndarray) -> Tuple[int, int]:
         """
@@ -290,14 +351,24 @@ class SelfOrganizingMap:
     
     def _find_second_bmu(self, x: np.ndarray, bmu: Tuple[int, int]) -> Tuple[int, int]:
         """두 번째 BMU 찾기 (topographic error 계산용)"""
-        diff = self.weights - x
-        distances = np.linalg.norm(diff, axis=2)
-        
-        # BMU 제외
-        distances[bmu[0], bmu[1]] = np.inf
-        
-        second_bmu_idx = np.unravel_index(np.argmin(distances), distances.shape)
-        return second_bmu_idx
+        dists = self._distances_to_all_neurons(x)
+        if dists is None:
+            # 커스텀 거리 함수는 느린 방식으로 2nd BMU 탐색
+            min_dist = float('inf')
+            second = (0, 0)
+            for i in range(self.map_size[0]):
+                for j in range(self.map_size[1]):
+                    if (i, j) == bmu:
+                        continue
+                    dist = self._distance_fn(x, self.weights[i, j])
+                    if dist < min_dist:
+                        min_dist = dist
+                        second = (i, j)
+            return second
+
+        dists = dists.copy()
+        dists[bmu[0], bmu[1]] = np.inf
+        return np.unravel_index(int(np.argmin(dists)), dists.shape)
     
     def _neighborhood_function(
         self, 
@@ -331,7 +402,8 @@ class SelfOrganizingMap:
         data: np.ndarray, 
         num_iterations: int,
         verbose: bool = True,
-        calc_errors: bool = True
+        calc_errors: bool = True,
+        error_sample_size: Optional[int] = None
     ):
         """
         SOM 학습
@@ -348,6 +420,8 @@ class SelfOrganizingMap:
             에러 계산 여부
         """
         n_samples = data.shape[0]
+
+        log_every = max(1, num_iterations // 10)
         
         for iteration in range(num_iterations):
             # 랜덤하게 샘플 선택
@@ -366,15 +440,22 @@ class SelfOrganizingMap:
             h = self._neighborhood_function(bmu, sigma)
             
             # 가중치 업데이트
-            for i in range(self.map_size[0]):
-                for j in range(self.map_size[1]):
-                    self.weights[i, j] += learning_rate * h[i, j] * (x - self.weights[i, j])
+            self.weights += learning_rate * h[..., np.newaxis] * (x - self.weights)
+
+            # cosine 거리에서는 학습 중에도 가중치를 단위벡터로 유지하는 편이 BMU/업데이트가 안정적입니다.
+            if self._distance_kind == 'cosine':
+                wn = np.linalg.norm(self.weights, axis=2, keepdims=True) + 1e-8
+                self.weights = self.weights / wn
             
             # 에러 계산 및 출력
-            if verbose and (iteration + 1) % (num_iterations // 10) == 0:
+            if verbose and (iteration + 1) % log_every == 0:
                 if calc_errors:
-                    qe = self.quantization_error(data)
-                    te = self.topographic_error(data)
+                    err_data = data
+                    if error_sample_size is not None and 0 < error_sample_size < n_samples:
+                        indices = np.random.choice(n_samples, size=error_sample_size, replace=False)
+                        err_data = data[indices]
+                    qe = self.quantization_error(err_data)
+                    te = self.topographic_error(err_data)
                     self.quantization_errors.append(qe)
                     self.topographic_errors.append(te)
                     print(f"Iteration {iteration + 1}/{num_iterations} - "
@@ -531,6 +612,8 @@ class SelfOrganizingMap:
     
     def plot_u_matrix(self, figsize: Tuple[int, int] = (10, 8), cmap: str = 'viridis', alpha: float = 1.0):
         """U-Matrix 시각화"""
+        if plt is None:
+            raise ModuleNotFoundError("matplotlib is required for plotting. Install it (e.g., pip/conda install matplotlib) to use plot_* methods.")
         u_matrix = self.get_u_matrix()
 
         if self.topology == 'hex':

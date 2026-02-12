@@ -1,89 +1,92 @@
-# LoRa Symbol Analysis with Self-Organizing Map (SOM)
+# Self-Organizing Map (SOM) 실험 모음
 
-LoRa(Chirp Spread Spectrum) 심볼을 **SOM(Self-Organizing Map)** 으로 시각화/분석하는 실험 모음입니다.
+이 저장소는 **SOM(Self-Organizing Map)** 으로 (1) 이미지 데이터(MNIST)와 (2) LoRa baseband 심볼을 **시각화/군집화**하는 실험을 정리합니다.
 
-- 환경: SF=9, 심볼 512개, 기본적으로 노이즈 없는(Clean) 조건
-- 목적: “심볼 간 유사도/거리”를 어떤 표현 공간에서 정의하느냐에 따라 SOM 토폴로지가 어떻게 달라지는지 확인
+핵심 포인트는 “입력 표현(도메인/특징)을 어떻게 정의하느냐”에 따라 SOM의 토폴로지/군집 결과가 크게 달라진다는 점입니다.
+
+## 빠른 시작
+
+1) 파이썬 환경 준비(예: conda)
+
+```bash
+pip install numpy matplotlib scipy scikit-learn
+```
+
+MNIST 데이터를 로드하려면 보통 아래 중 하나가 필요합니다.
+
+- (권장) 로컬에서 바로 로드: `pip install tensorflow`
+- (대안) OpenML fallback: 네트워크가 되는 환경 + `scikit-learn`(위 설치에 포함)
+
+2) 노트북 실행
+
+- MNIST(0/1) 가중치 시각화: [model-test/simple_example/mnistBinary.ipynb](model-test/simple_example/mnistBinary.ipynb)
+- LoRa STFT-SOM 군집 분석: [model-test/lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb)
 
 ## 폴더 구조
 
 - [model-test](model-test)
-  - [lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb): Real+Imag vs FFT magnitude 표현 비교
-  - [lora_som_circular.ipynb](model-test/lora_som_circular.ipynb): 심볼 인덱스를 원형 좌표로 임베딩해 “순환 거리”를 직접 반영
-  - [lora_som_dechirp.ipynb](model-test/lora_som_dechirp.ipynb): dechirp/FFT 기반 확인 및 실험(노트북)
   - [som.py](model-test/som.py): SOM 구현
+  - [lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb): **STFT(+dechirp) 기반 LoRa 심볼 SOM 파이프라인 + 프로토타입(가중치) 시각화**
+  - [lora_som_baseband.ipynb](model-test/lora_som_baseband.ipynb): LoRa baseband 실험(초기/비교용)
+  - [simple_example/mnist.ipynb](model-test/simple_example/mnist.ipynb): MNIST(0~9) 데모
+  - [simple_example/mnistBinary.ipynb](model-test/simple_example/mnistBinary.ipynb): **MNIST(0/1) 분리 + 프로토타입(가중치) 타일 시각화**
 - [utils](utils)
-  - [LoRa.py](utils/LoRa.py): LoRa 심볼 생성/처리 유틸
-  - [my_lora_utils.py](utils/my_lora_utils.py): 보조 유틸
+  - [LoRa.py](utils/LoRa.py): LoRa 심볼 생성 유틸
+- [docs](docs)
+  - [domain_definition_stft_som.md](docs/domain_definition_stft_som.md): STFT-SOM 도메인 정의/설계 메모
 
-## 핵심 아이디어 (3가지 표현 공간)
+## 핵심 결과 (노트북 저장 출력 기반)
 
-### 1) 원형 좌표 공간 (Circular embedding)
-- 입력: 심볼 인덱스 $k$를 $\theta=2\pi k/N$로 두고 $(\cos\theta, \sin\theta)$로 변환
-- 거리: 2D 유클리드 거리(원 위 chord length) → 순환 거리 $d_\text{circ}=\min(|\Delta|, N-|\Delta|)$와 단조 대응
-- 의미: “신호의 물리적 파형”이 아니라 **심볼 인덱스의 순환 구조**를 SOM에 직접 주입해 토폴로지 보존 여부를 점검
+### 1) MNIST Binary(0/1): “가중치(프로토타입) 타일”로 군집 구조 확인
 
-노트북: [lora_som_circular.ipynb](model-test/lora_som_circular.ipynb)
+노트북: [model-test/simple_example/mnistBinary.ipynb](model-test/simple_example/mnistBinary.ipynb)
 
-### 2) 시간영역 Real+Imag 공간 (I/Q 시계열 펼치기)
-- 입력: 복소수 심볼을 [real, imag]로 이어붙인 고차원 벡터
-- 거리: (정규화 후) 유클리드 거리
-- 의미: “파형(I/Q) 유사도”를 직접 비교
-- 주의: LoRa chirp는 심볼에 따라 위상/주파수 구조가 크게 변하므로, 인덱스 순서와 단순 유사도가 잘 맞지 않을 수 있음
+- 데이터: MNIST에서 0/1만 사용, 총 6000개(0:3000, 1:3000)
+- 입력: 784차원 → PCA 32차원 (Explained variance sum ≈ 0.8490)
+- 학습(노트북 출력): Quantization Error ≈ 8.6781, Topographic Error ≈ 0.0900
 
-노트북: [lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb)
+관찰 포인트:
 
-### 3) 주파수영역 FFT magnitude 공간 (위상 제거)
-- 입력: 각 심볼의 $|\mathrm{FFT}(x)|$ 벡터(위상 정보 제거)
-- 거리: (정규화 후) 유클리드 거리
-- 의미: 위상 변화에 둔감한 스펙트럼 형태 유사도 비교 → 실험에서 더 안정적으로 “질서(그라데이션)”가 나타나는 경향
+- U-Matrix/Label map에서 0과 1이 넓게 분리되는 경향이 나타남
+- **프로토타입(뉴런 가중치) 타일**을 28×28로 복원(PCA inverse)하면, 맵 위에서
+  - ‘1’의 세로 획/기울기 변화
+  - ‘0’의 고리/두께/타원율 변화
+  같은 “형태의 연속적인 변화”가 확인되어 **군집 경계가 무엇을 기준으로 생기는지** 직관적으로 해석 가능
 
-노트북: [lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb)
+결과 이미지(노트북 출력에서 추출):
 
+![MNIST Binary - SOM U-Matrix](docs/results/mnistBinary_out_001.png)
 
+![MNIST Binary - SOM prototypes (tiled)](docs/results/mnistBinary_out_004.png)
 
-## 실험 결과 요약 (현재 노트북 출력 기준)
+### 2) LoRa: STFT(+dechirp) 기반 SOM으로 “시간-주파수 패턴” 군집화
 
-## 결과 이미지
+노트북: [model-test/lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb)
 
-### Real+Imag vs FFT magnitude (비교)
+설정(노트북 출력):
 
-![Comparison: Real+Imag vs FFT](docs/assets/comparison_realimag_vs_fft.png)
+- SF=9, codeword 0..511(총 512개), clean(no noise)
+- BW=125 kHz 가정, FS=BW
+- 파이프라인: (옵션) dechirp → STFT magnitude(dB) → 고정 크기(64×32) → 벡터화(2048) → PCA 64 → SOM(24×24, hex)
+- 학습(노트북 출력): Quantization Error ≈ 4.7429, Topographic Error ≈ 0.0703
 
-### Circular embedding
+관찰 포인트:
 
-![LoRa Symbols in Circular Space](docs/assets/circular_space.png)
+- 단일 샘플 STFT 비교에서
+  - **dechirp 전**: chirp가 시간-주파수 평면에서 대각선 구조로 나타남
+  - **dechirp 후**: 특정 주파수 bin에 “수평 톤”이 뚜렷하게 나타남
+- BMU 프로토타입(가중치)을 STFT로 복원하면, dechirp 후 톤 패턴과 유사한 프로토타입이 선택되어
+  **SOM이 실제로 TF 패턴을 기준으로 근접도를 형성**함을 확인 가능
+- 전체 프로토타입 타일(STFT-SOM prototypes)을 보면, 맵 전반에 걸쳐 “톤 위치/강도”가 변화하는 프로토타입들이 배열되어
+  **코드워드별 패턴 차이가 SOM 격자에 조직화**되는 양상을 관찰 가능
 
-![U-Matrix (Circular Coordinates)](docs/assets/circular_u_matrix.png)
+결과 이미지(노트북 출력에서 추출):
 
-![Circular SOM - Symbol Distribution](docs/assets/circular_symbol_distribution.png)
+![LoRa STFT-SOM prototypes (tiled)](docs/results/lora_som_analysis_out_002.png)
 
-![Complete Symbol Path on SOM](docs/assets/circular_symbol_path.png)
+![LoRa single-sample STFT (no-dechirp vs dechirp) + BMU prototype](docs/results/lora_som_analysis_out_003.png)
 
-### 비교: Real+Imag vs FFT magnitude
-노트북: [lora_som_analysis.ipynb](model-test/lora_som_analysis.ipynb)
+## 재현성 메모
 
-- Real+Imag SOM
-  - Quantization Error: 26.9579
-  - Topographic Error: 0.4609
-- FFT Magnitude SOM
-  - Quantization Error: 0.0026
-  - Topographic Error: 0.0957
-
-해석(요약): FFT magnitude는 위상 영향을 제거해서, SOM 관점에서 더 일관된 이웃 구조(낮은 TE)가 나타남.
-
-### 원형 좌표(순환 구조 직접 주입)
-노트북: [lora_som_circular.ipynb](model-test/lora_som_circular.ipynb)
-
-- Dechirp 후 FFT 피크 인덱스가 심볼 인덱스와 일치함을 확인
-- Circular embedding에서 $d(0,1)\approx d(0,511)$, $d(0,256)=2$ 등 순환 거리가 반영됨
-- 출력 지표(노트북 기준)
-  - Quantization Error: 0.003281
-  - Topographic Error: 0.6152
-
-해석(요약): 입력 공간 자체는 순환 구조를 정확히 갖지만, 2D 격자 SOM에서 “완전한 1D 링 토폴로지”가 항상 깔끔히 보존되진 않음(TE가 큼).
-
-## 메모
-
-- 시각화 산점도는 겹침을 줄이기 위해 jitter(작은 랜덤 오프셋)를 주는 경우가 있어, 정확한 BMU 좌표는 정수 격자임.
-- 결과 재현을 위해 SOM의 `random_seed`를 고정하는 것을 권장.
+- SOM은 초기값/셔플에 따라 결과가 달라질 수 있어 `random_seed` 고정을 권장합니다.
+- 노트북 출력 그림은 실행 환경(라이브러리 버전, 폰트/백엔드)에 따라 색/레이아웃이 조금 달라질 수 있습니다.
