@@ -53,11 +53,12 @@ MNIST 데이터를 로드하려면 보통 아래 중 하나가 필요합니다.
   - ‘0’의 고리/두께/타원율 변화
   같은 “형태의 연속적인 변화”가 확인되어 **군집 경계가 무엇을 기준으로 생기는지** 직관적으로 해석 가능
 
-결과 이미지(노트북 출력에서 추출):
+결과 이미지
 
-![MNIST Binary - SOM U-Matrix](docs/results/mnistBinary_out_001.png)
+<img width="758" height="577" alt="image" src="https://github.com/user-attachments/assets/444fac75-e991-48b6-b5c0-bfb8aa245020" />
 
-![MNIST Binary - SOM prototypes (tiled)](docs/results/mnistBinary_out_004.png)
+<img width="713" height="736" alt="image" src="https://github.com/user-attachments/assets/ac5cca51-1f1d-4385-b9fa-781a210ee69a" />
+
 
 ### 2) LoRa: STFT(+dechirp) 기반 SOM으로 “시간-주파수 패턴” 군집화
 
@@ -82,9 +83,11 @@ MNIST 데이터를 로드하려면 보통 아래 중 하나가 필요합니다.
 
 결과 이미지(노트북 출력에서 추출):
 
-![LoRa STFT-SOM prototypes (tiled)](docs/results/lora_som_analysis_out_002.png)
+<img width="955" height="777" alt="image" src="https://github.com/user-attachments/assets/d44a3717-941f-484e-9fe7-156405b03bf6" />
 
-![LoRa single-sample STFT (no-dechirp vs dechirp) + BMU prototype](docs/results/lora_som_analysis_out_003.png)
+
+<img width="1382" height="383" alt="image" src="https://github.com/user-attachments/assets/7f128b08-79dd-42a6-a16d-d5830dbc063c" />
+
 
 ## 재현성 메모
 
